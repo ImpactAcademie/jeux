@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Green Slime</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #bce9f0;
+        font-family: system-ui, sans-serif;
+      }
+
+      canvas {
+        display: block;
+      }
+
+    </style>
+  </head>
+  <body>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as THREE from "three";
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xbce9f0);
+      scene.fog = new THREE.Fog(0xbce9f0, 8, 18);
+
+      const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 100);
+      camera.position.set(0, 3.2, 9);
+      camera.lookAt(0, 1.3, 0);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      document.body.appendChild(renderer.domElement);
+
+      scene.add(new THREE.HemisphereLight(0xe8ffff, 0x567a55, 2.2));
+
+      const keyLight = new THREE.DirectionalLight(0xffffff, 3);
+      keyLight.position.set(-4, 8, 6);
+      keyLight.castShadow = true;
+      keyLight.shadow.mapSize.set(1024, 1024);
+      scene.add(keyLight);
+
+      const ground = new THREE.Mesh(
+        new THREE.CircleGeometry(5.5, 64),
+        new THREE.MeshStandardMaterial({ color: 0x77c97a, roughness: 0.92 })
+      );
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -0.02;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      const slime = new THREE.Group();
+      scene.add(slime);
+
+      const bodyProfile = [
+        [0, -0.015],
+        [0.58, -0.015],
+        [1.02, 0],
+        [1.34, 0.07],
+        [1.49, 0.18],
+        [1.53, 0.32],
+        [1.49, 0.48],
+        [1.4, 0.65],
+        [1.38, 0.88],
+        [1.48, 1.2],
+        [1.5, 1.55],
+        [1.44, 1.9],
+        [1.3, 2.25],
+        [1.08, 2.55],
+        [0.78, 2.8],
+        [0.42, 3],
+        [0, 3.08],
+      ].map(([radius, height]) => new THREE.Vector3(radius, height, 0));
+      const bodyCurve = new THREE.CatmullRomCurve3(bodyProfile);
+      const bodyGeometry = new THREE.LatheGeometry(bodyCurve.getPoints(80), 64);
+      bodyGeometry.scale(1, 1, 0.86);
+      const bodyMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0x58ca62,
+        roughness: 0.28,
+        metalness: 0,
+        clearcoat: 1,
+        clearcoatRoughness: 0.08,
+        transmission: 0.04,
+        thickness: 0.8,
+      });
+      const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+      body.castShadow = true;
+      slime.add(body);
+
+      const bodyBasePositions = Float32Array.from(bodyGeometry.attributes.position.array);
+
+      const shine = new THREE.Mesh(
+        new THREE.SphereGeometry(0.35, 24, 16),
+        new THREE.MeshPhysicalMaterial({
+          color: 0xbaffc1,
+          transparent: true,
+          opacity: 0.72,
+          roughness: 0.1,
+        })
+      );
+      shine.scale.set(1.2, 0.42, 0.14);
+      shine.position.set(-0.68, 2.45, 0.88);
+      shine.rotation.z = -0.45;
+      slime.add(shine);
+
+      const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 });
+      const pupilMaterial = new THREE.MeshStandardMaterial({ color: 0x172719, roughness: 0.4 });
+      const eyeHighlightMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const eyes = [];
+
+      for (const x of [-0.48, 0.48]) {
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.27, 24, 16), eyeMaterial);
+        eye.position.set(x, 1.75, 1.18);
+        eye.scale.y = 1.15;
+        eye.castShadow = true;
+        slime.add(eye);
+
+        const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 12), pupilMaterial);
+        pupil.position.set(x, 1.75, 1.41);
+        pupil.castShadow = true;
+        slime.add(pupil);
+
+        const highlight = new THREE.Mesh(
+          new THREE.SphereGeometry(0.026, 12, 8),
+          eyeHighlightMaterial
+        );
+        highlight.position.set(x - 0.035, 1.82, 1.505);
+        slime.add(highlight);
+        eyes.push(eye);
+      }
+
+      const mouth = new THREE.Mesh(
+        new THREE.TorusGeometry(0.22, 0.055, 12, 24, Math.PI),
+        new THREE.MeshStandardMaterial({ color: 0x1f6033, roughness: 0.68 })
+      );
+      mouth.position.set(0, 1.22, 1.37);
+      mouth.rotation.z = Math.PI;
+      slime.add(mouth);
+
+      const shadowCanvas = document.createElement("canvas");
+      shadowCanvas.width = 128;
+      shadowCanvas.height = 128;
+      const shadowContext = shadowCanvas.getContext("2d");
+      const shadowGradient = shadowContext.createRadialGradient(64, 64, 8, 64, 64, 64);
+      shadowGradient.addColorStop(0, "rgba(35, 68, 45, 0.62)");
+      shadowGradient.addColorStop(0.45, "rgba(35, 68, 45, 0.28)");
+      shadowGradient.addColorStop(1, "rgba(35, 68, 45, 0)");
+      shadowContext.fillStyle = shadowGradient;
+      shadowContext.fillRect(0, 0, 128, 128);
+      const shadowTexture = new THREE.CanvasTexture(shadowCanvas);
+
+      const shadow = new THREE.Mesh(
+        new THREE.CircleGeometry(1.55, 48),
+        new THREE.MeshBasicMaterial({
+          map: shadowTexture,
+          transparent: true,
+          depthWrite: false,
+        })
+      );
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.position.y = 0.01;
+      shadow.scale.y = 0.38;
+      scene.add(shadow);
+
+      addEventListener("resize", () => {
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+      });
+
+      const clock = new THREE.Clock();
+
+      function animate() {
+        const elapsed = clock.getElapsedTime();
+
+        const position = bodyGeometry.attributes.position;
+        for (let i = 0; i < position.count; i++) {
+          const baseX = bodyBasePositions[i * 3];
+          const baseY = bodyBasePositions[i * 3 + 1];
+          const baseZ = bodyBasePositions[i * 3 + 2];
+          const angle = Math.atan2(baseZ, baseX);
+          const footWeight = 1 - THREE.MathUtils.smoothstep(baseY, 0.2, 0.9);
+          const bodyWeight = Math.sin(THREE.MathUtils.clamp(baseY / 3.08, 0, 1) * Math.PI);
+          const footRipple = Math.sin(angle * 3 + elapsed * 1.4) * 0.025
+            + Math.sin(angle * 5 - elapsed * 0.8) * 0.012;
+          const bodyRipple = Math.sin(angle * 2 + elapsed * 1.3 + baseY * 1.8) * 0.012;
+          const radialChange = footRipple * footWeight + bodyRipple * bodyWeight;
+          const edgeLift = Math.max(0, baseY) * footWeight * Math.sin(angle * 3 + elapsed * 1.4) * 0.012;
+          position.setXYZ(
+            i,
+            baseX * (1 + radialChange),
+            baseY + edgeLift + bodyRipple * bodyWeight * 0.25,
+            baseZ * (1 + radialChange)
+          );
+        }
+        position.needsUpdate = true;
+        bodyGeometry.computeVertexNormals();
+
+        const blinkCycle = elapsed % 4.5;
+        const blinking = blinkCycle > 4.15 && blinkCycle < 4.35;
+        const blinkScale = blinking ? 0.12 : 1;
+        for (const eye of eyes) {
+          eye.scale.y = THREE.MathUtils.lerp(eye.scale.y, 1.15 * blinkScale, 0.5);
+        }
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+      }
+
+      animate();
+    </script>
+  </body>
+</html>
