@@ -31,14 +31,14 @@
     </script>
     <script type="module">
       import * as THREE from "three";
+      import { PointerLockControls } from "/node_modules/three/examples/jsm/controls/PointerLockControls.js";
 
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0xbce9f0);
       scene.fog = new THREE.Fog(0xbce9f0, 8, 18);
 
       const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 100);
-      camera.position.set(0, 3.2, 9);
-      camera.lookAt(0, 1.3, 0);
+      camera.position.set(0, 1.65, 7.5);
 
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -48,6 +48,23 @@
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       document.body.appendChild(renderer.domElement);
+
+      const controls = new PointerLockControls(camera, renderer.domElement);
+      renderer.domElement.addEventListener("click", () => {
+        if (!controls.isLocked) controls.lock();
+      });
+
+      const pressedKeys = new Set();
+      const movementKeys = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
+      addEventListener("keydown", (event) => {
+        if (movementKeys.has(event.code)) {
+          event.preventDefault();
+          pressedKeys.add(event.code);
+        }
+      });
+      addEventListener("keyup", (event) => pressedKeys.delete(event.code));
+      addEventListener("blur", () => pressedKeys.clear());
 
       scene.add(new THREE.HemisphereLight(0xe8ffff, 0x567a55, 2.2));
 
@@ -188,7 +205,8 @@
       const clock = new THREE.Clock();
 
       function animate() {
-        const elapsed = clock.getElapsedTime();
+        const delta = Math.min(clock.getDelta(), 0.05);
+        const elapsed = clock.elapsedTime;
 
         const position = bodyGeometry.attributes.position;
         for (let i = 0; i < position.count; i++) {
@@ -218,6 +236,23 @@
         const blinkScale = blinking ? 0.12 : 1;
         for (const eye of eyes) {
           eye.scale.y = THREE.MathUtils.lerp(eye.scale.y, 1.15 * blinkScale, 0.5);
+        }
+
+        if (controls.isLocked) {
+          const forward = Number(pressedKeys.has("KeyW") || pressedKeys.has("ArrowUp"))
+            - Number(pressedKeys.has("KeyS") || pressedKeys.has("ArrowDown"));
+          const sideways = Number(pressedKeys.has("KeyD") || pressedKeys.has("ArrowRight"))
+            - Number(pressedKeys.has("KeyA") || pressedKeys.has("ArrowLeft"));
+          const length = Math.hypot(forward, sideways) || 1;
+          controls.moveForward((forward / length) * 3 * delta);
+          controls.moveRight((sideways / length) * 3 * delta);
+          camera.position.y = 1.65;
+
+          const distance = Math.hypot(camera.position.x, camera.position.z);
+          if (distance > 4.8) {
+            camera.position.x *= 4.8 / distance;
+            camera.position.z *= 4.8 / distance;
+          }
         }
 
         renderer.render(scene, camera);
