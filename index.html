@@ -73,6 +73,24 @@
         font-size: 12px;
       }
 
+      .health {
+        position: fixed;
+        z-index: 3;
+        bottom: 16px;
+        right: 16px;
+        padding: 10px 14px;
+        border-radius: 10px;
+        background: rgba(22, 46, 34, 0.9);
+        color: #f3fff2;
+        pointer-events: none;
+      }
+
+      .health progress {
+        width: 90px;
+        accent-color: #83e681;
+        vertical-align: middle;
+      }
+
     </style>
   </head>
   <body>
@@ -85,7 +103,14 @@
       <p><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> ou flèches pour se déplacer.</p>
       <p>Cliquez sur la scène pour activer la souris · Échap pour la libérer</p>
       <p><kbd>Espace</kbd> pour lancer du slime · <kbd>P</kbd> pour ajouter un ennemi.</p>
+      <p><kbd>B</kbd> pour une vague de slime (20 PV).</p>
     </aside>
+    <div class="health">
+      <label for="health-bar">PV</label>
+      <progress id="health-bar" value="30" max="30"></progress>
+      <span id="health-value" aria-live="polite">30 / 30</span>
+      <span id="restart-hint" hidden> · R pour recommencer</span>
+    </div>
     <script type="importmap">
       {
         "imports": {
@@ -181,6 +206,16 @@
           event.preventDefault();
           setCameraMode(mode);
           return;
+        }
+
+        if (event.code === "KeyR" && playerHealth === 0) {
+          restartGame();
+          return;
+        }
+        if (playerHealth === 0) return;
+
+        if (event.code === "KeyB" && !event.repeat) {
+          useGooBurst();
         }
 
         if (event.code === "Space" && cameraMode !== 4) {
@@ -350,6 +385,91 @@
       let throwElapsed = throwDuration;
       const enemies = [];
       const enemyRadius = 0.75;
+      const maxHealth = 30;
+      const burstCost = 20;
+      const burstRadius = 6;
+      const burstDuration = 0.55;
+      const burst = new THREE.Mesh(
+        new THREE.RingGeometry(0.72, 1, 64),
+        new THREE.MeshBasicMaterial({ color: 0x61e84b, transparent: true, depthWrite: false })
+      );
+      burst.rotation.x = -Math.PI / 2;
+      burst.visible = false;
+      scene.add(burst);
+      let burstElapsed = 0;
+      let playerHealth = maxHealth;
+      let damageCooldown = 0;
+      const healthBar = document.querySelector("#health-bar");
+      const healthValue = document.querySelector("#health-value");
+      const restartHint = document.querySelector("#restart-hint");
+
+      function updateHealthDisplay() {
+        healthBar.value = playerHealth;
+        healthValue.textContent = `${playerHealth} / ${maxHealth}`;
+        restartHint.hidden = playerHealth > 0;
+      }
+
+      function useGooBurst() {
+        if (playerHealth < burstCost) return;
+
+        playerHealth -= burstCost;
+        updateHealthDisplay();
+        if (playerHealth === 0) pressedKeys.clear();
+        burstElapsed = 0;
+        burst.position.set(slime.position.x, groundHeight + 0.035, slime.position.z);
+        burst.visible = true;
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          const enemy = enemies[i];
+          if (Math.hypot(enemy.position.x - burst.position.x, enemy.position.z - burst.position.z) <= burstRadius) {
+            scene.remove(enemy);
+            enemies.splice(i, 1);
+          }
+        }
+      }
+
+      function updateGooBurst(delta) {
+        if (!burst.visible) return;
+        burstElapsed += delta;
+        const progress = Math.min(burstElapsed / burstDuration, 1);
+        burst.scale.setScalar(burstRadius * (1 - (1 - progress) ** 2));
+        burst.material.opacity = 0.82 * (1 - progress);
+        burst.visible = progress < 1;
+      }
+
+      function updatePlayerHealth(delta) {
+        damageCooldown = Math.max(0, damageCooldown - delta);
+        if (damageCooldown > 0) return;
+
+        const touchingEnemy = enemies.some(({ position }) =>
+          Math.hypot(slime.position.x - position.x, slime.position.z - position.z) <= baseRadius + enemyRadius
+        );
+        if (touchingEnemy) {
+          playerHealth -= 1;
+          damageCooldown = 1;
+          updateHealthDisplay();
+          if (playerHealth === 0) pressedKeys.clear();
+        }
+      }
+
+      function restartGame() {
+        for (const enemy of enemies) scene.remove(enemy);
+        for (const { blob } of gooBlobs) scene.remove(blob);
+        enemies.length = 0;
+        gooBlobs.length = 0;
+        spawnEnemy(-3, 5);
+        slime.position.set(0, 0, 0);
+        slime.rotation.y = 0;
+        slimeVelocity.set(0, 0, 0);
+        if (cameraMode === 1) {
+          camera.position.copy(slimeEye);
+          camera.lookAt(0, slimeEye.y, slimeEye.z + 1);
+        }
+        throwElapsed = throwDuration;
+        burst.visible = false;
+        playerHealth = maxHealth;
+        damageCooldown = 0;
+        updateHealthDisplay();
+      }
       const enemyBodyMaterial = new THREE.MeshStandardMaterial({ color: 0xe77f45, roughness: 0.48 });
       const enemyEyeMaterial = new THREE.MeshStandardMaterial({ color: 0x3b2027 });
       const enemySpawn = new THREE.Vector3();
@@ -581,7 +701,8 @@
           camera.position.addScaledVector(forwardDirection, (forward / length) * 4 * delta);
           camera.position.addScaledVector(rightDirection, (sideways / length) * 4 * delta);
         } else {
-          moveSlime(forward, sideways, delta);
+          if (playerHealth > 0) moveSlime(forward, sideways, delta);
+          else slimeVelocity.set(0, 0, 0);
           if (cameraMode === 1) {
             camera.position.copy(slime.localToWorld(cameraTarget.copy(slimeEye)));
           } else if (cameraMode === 2) {
@@ -593,8 +714,12 @@
           }
         }
 
-        updateEnemies(delta, elapsed);
-        updateGoo(delta, elapsed);
+        if (playerHealth > 0) {
+          updateEnemies(delta, elapsed);
+          updateGoo(delta, elapsed);
+          updatePlayerHealth(delta);
+        }
+        updateGooBurst(delta);
         renderer.render(scene, camera);
         requestAnimationFrame(animate);
       }
