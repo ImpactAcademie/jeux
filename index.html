@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Green Slime</title>
+    <title>Slime vert</title>
     <style>
       html,
       body {
@@ -19,9 +19,73 @@
         display: block;
       }
 
+      .camera-help {
+        position: fixed;
+        z-index: 3;
+        top: 16px;
+        left: 16px;
+        width: min(260px, calc(100vw - 56px));
+        padding: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 12px;
+        background: rgba(22, 46, 34, 0.82);
+        color: #f3fff2;
+        font-size: 13px;
+        line-height: 1.4;
+        backdrop-filter: blur(8px);
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .camera-help h1 {
+        margin: 0 0 9px;
+        font-size: 14px;
+        letter-spacing: 0.04em;
+      }
+
+      .camera-option {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 4px 6px;
+        border-radius: 6px;
+      }
+
+      .camera-option.active {
+        background: rgba(133, 230, 129, 0.2);
+        color: #c5ffc2;
+      }
+
+      .camera-help kbd {
+        min-width: 22px;
+        padding: 2px 5px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.1);
+        color: inherit;
+        font: inherit;
+        text-align: center;
+      }
+
+      .camera-help p {
+        margin: 9px 0 0;
+        color: #d3e6d5;
+        font-size: 12px;
+      }
+
     </style>
   </head>
   <body>
+    <aside class="camera-help" aria-label="Commandes de caméra">
+      <h1>Caméras</h1>
+      <div class="camera-option" data-camera-mode="1"><kbd>&amp;</kbd><span>Vue du slime</span></div>
+      <div class="camera-option" data-camera-mode="2"><kbd>é</kbd><span>Vue de face fixe</span></div>
+      <div class="camera-option" data-camera-mode="3"><kbd>"</kbd><span>Vue à la troisième personne</span></div>
+      <div class="camera-option" data-camera-mode="4"><kbd>'</kbd><span>Caméra libre</span></div>
+      <p><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> ou flèches pour se déplacer.</p>
+      <p>Cliquez sur la scène pour activer la souris · Échap pour la libérer</p>
+      <p><kbd>Espace</kbd> pour lancer du slime · <kbd>P</kbd> pour ajouter un ennemi.</p>
+    </aside>
     <script type="importmap">
       {
         "imports": {
@@ -35,10 +99,10 @@
 
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(0xbce9f0);
-      scene.fog = new THREE.Fog(0xbce9f0, 8, 18);
 
       const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 100);
-      camera.position.set(0, 1.65, 7.5);
+      camera.position.set(0, 1.75, 1.7);
+      camera.lookAt(0, 1.75, 2.7);
 
       const renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -51,19 +115,91 @@
 
       const controls = new PointerLockControls(camera, renderer.domElement);
       renderer.domElement.addEventListener("click", () => {
-        if (!controls.isLocked) controls.lock();
+        if ((cameraMode === 1 || cameraMode === 3 || cameraMode === 4) && !controls.isLocked) {
+          controls.lock();
+        }
+      });
+      document.addEventListener("mousemove", (event) => {
+        if (cameraMode === 3 && controls.isLocked) {
+          slime.rotation.y -= event.movementX * 0.003;
+        }
       });
 
+      let cameraMode = 1;
       const pressedKeys = new Set();
-      const movementKeys = new Set(["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+      const movementKeys = new Set([
+        "KeyW", "KeyA", "KeyS", "KeyD", "KeyZ", "KeyQ",
+        "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+      ]);
+      const cameraModeByKey = {
+        Digit1: 1,
+        Digit2: 2,
+        Digit3: 3,
+        Digit4: 4,
+        "&": 1,
+        "é": 2,
+        '"': 3,
+        "'": 4,
+      };
+
+      const cameraOptions = document.querySelectorAll("[data-camera-mode]");
+
+      function setCameraMode(mode) {
+        if (mode === cameraMode) return;
+
+        if (controls.isLocked) controls.unlock();
+        pressedKeys.clear();
+        cameraMode = mode;
+        controls.enabled = mode !== 3;
+
+        if (mode === 1) {
+          camera.position.copy(slime.localToWorld(cameraTarget.copy(slimeEye)));
+          camera.lookAt(slime.localToWorld(cameraTarget.copy(slimeEye).setZ(slimeEye.z + 1)));
+        } else if (mode === 2) {
+          camera.position.set(slime.position.x, 2, slime.position.z + 7.6);
+          camera.lookAt(slime.position.x, 1.45, slime.position.z);
+        } else if (mode === 3) {
+          camera.position.copy(slime.position).add(thirdPersonOffset);
+          camera.lookAt(slime.position.x, 0.8, slime.position.z);
+        } else {
+          camera.position.set(0, 3.5, 8);
+          camera.lookAt(0, 1.5, 0);
+        }
+
+        for (const option of cameraOptions) {
+          option.classList.toggle("active", Number(option.dataset.cameraMode) === mode);
+        }
+      }
+
+      for (const option of cameraOptions) {
+        option.classList.toggle("active", Number(option.dataset.cameraMode) === cameraMode);
+      }
 
       addEventListener("keydown", (event) => {
+        const mode = cameraModeByKey[event.key] ?? cameraModeByKey[event.code];
+        if (mode) {
+          event.preventDefault();
+          setCameraMode(mode);
+          return;
+        }
+
+        if (event.code === "Space" && cameraMode !== 4) {
+          event.preventDefault();
+          if (!event.repeat && throwElapsed >= throwDuration) throwElapsed = 0;
+        }
+
+        if (event.code === "KeyP" && !event.repeat) {
+          spawnEnemyAhead();
+        }
+
         if (movementKeys.has(event.code)) {
           event.preventDefault();
           pressedKeys.add(event.code);
         }
       });
-      addEventListener("keyup", (event) => pressedKeys.delete(event.code));
+      addEventListener("keyup", (event) => {
+        pressedKeys.delete(event.code);
+      });
       addEventListener("blur", () => pressedKeys.clear());
 
       scene.add(new THREE.HemisphereLight(0xe8ffff, 0x567a55, 2.2));
@@ -74,9 +210,25 @@
       keyLight.shadow.mapSize.set(1024, 1024);
       scene.add(keyLight);
 
+      const checkerCanvas = document.createElement("canvas");
+      checkerCanvas.width = 128;
+      checkerCanvas.height = 128;
+      const checkerContext = checkerCanvas.getContext("2d");
+      for (let y = 0; y < 2; y++) {
+        for (let x = 0; x < 2; x++) {
+          checkerContext.fillStyle = (x + y) % 2 === 0 ? "#d5d9d5" : "#758278";
+          checkerContext.fillRect(x * 64, y * 64, 64, 64);
+        }
+      }
+      const checkerTexture = new THREE.CanvasTexture(checkerCanvas);
+      checkerTexture.colorSpace = THREE.SRGBColorSpace;
+      checkerTexture.wrapS = THREE.RepeatWrapping;
+      checkerTexture.wrapT = THREE.RepeatWrapping;
+      checkerTexture.repeat.set(50, 50);
+
       const ground = new THREE.Mesh(
-        new THREE.CircleGeometry(5.5, 64),
-        new THREE.MeshStandardMaterial({ color: 0x77c97a, roughness: 0.92 })
+        new THREE.PlaneGeometry(100, 100),
+        new THREE.MeshStandardMaterial({ map: checkerTexture, roughness: 0.92 })
       );
       ground.rotation.x = -Math.PI / 2;
       ground.position.y = -0.02;
@@ -86,28 +238,60 @@
       const slime = new THREE.Group();
       scene.add(slime);
 
+      const bodyHeight = 3.08;
+      const groundHeight = ground.position.y;
+      const baseRadius = 2;
+      const slimeEye = new THREE.Vector3(0, 1.75, 1.7);
+      const thirdPersonOffset = new THREE.Vector3(5.5, 20.5, -13.5);
+      const cameraTarget = new THREE.Vector3();
+      const movementForward = new THREE.Vector3();
+      const movementRight = new THREE.Vector3();
+      const desiredVelocity = new THREE.Vector3();
+      const slimeVelocity = new THREE.Vector3();
+      const localVelocity = new THREE.Vector3();
+      const lookDirection = new THREE.Vector3();
+      const worldUp = new THREE.Vector3(0, 1, 0);
+
+      function moveSlime(forward, sideways, delta) {
+        const length = Math.hypot(forward, sideways) || 1;
+        movementForward.set(0, 0, 1).applyQuaternion(slime.quaternion);
+        movementRight.crossVectors(movementForward, worldUp);
+
+        desiredVelocity.copy(movementForward).multiplyScalar(forward)
+          .addScaledVector(movementRight, sideways).multiplyScalar(4 / length);
+        const response = forward || sideways ? 10 : 14;
+        slimeVelocity.lerp(desiredVelocity, 1 - Math.exp(-response * delta));
+        slime.position.addScaledVector(slimeVelocity, delta);
+        slime.position.clampScalar(-45, 45);
+      }
+
       const bodyProfile = [
-        [0, -0.015],
-        [0.58, -0.015],
-        [1.02, 0],
-        [1.34, 0.07],
-        [1.49, 0.18],
-        [1.53, 0.32],
-        [1.49, 0.48],
-        [1.4, 0.65],
-        [1.38, 0.88],
-        [1.48, 1.2],
+        [0, groundHeight],
+        [0.85, groundHeight],
+        [1.65, groundHeight],
+        [1.89, groundHeight],
+        [1.99, 0.06],
+        [baseRadius, 0.16],
+        [1.94, 0.31],
+        [1.8, 0.54],
+        [1.68, 0.83],
+        [1.58, 1.18],
         [1.5, 1.55],
-        [1.44, 1.9],
-        [1.3, 2.25],
-        [1.08, 2.55],
-        [0.78, 2.8],
-        [0.42, 3],
-        [0, 3.08],
+        [1.41, 1.9],
+        [1.26, 2.25],
+        [1.03, 2.55],
+        [0.74, 2.8],
+        [0.4, 3],
+        [0, bodyHeight],
       ].map(([radius, height]) => new THREE.Vector3(radius, height, 0));
       const bodyCurve = new THREE.CatmullRomCurve3(bodyProfile);
-      const bodyGeometry = new THREE.LatheGeometry(bodyCurve.getPoints(80), 64);
-      bodyGeometry.scale(1, 1, 0.86);
+      const bodyGeometry = new THREE.LatheGeometry(
+        bodyCurve.getPoints(80).map((point) => new THREE.Vector2(
+          point.x,
+          Math.max(groundHeight, point.y)
+        )),
+        64
+      );
       const bodyMaterial = new THREE.MeshPhysicalMaterial({
         color: 0x58ca62,
         roughness: 0.28,
@@ -121,55 +305,186 @@
       body.castShadow = true;
       slime.add(body);
 
-      const bodyBasePositions = Float32Array.from(bodyGeometry.attributes.position.array);
-
-      const shine = new THREE.Mesh(
-        new THREE.SphereGeometry(0.35, 24, 16),
-        new THREE.MeshPhysicalMaterial({
-          color: 0xbaffc1,
-          transparent: true,
-          opacity: 0.72,
-          roughness: 0.1,
-        })
+      const gooGeometry = new THREE.SphereGeometry(1, 24, 16);
+      const gooMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0x72d65a,
+        roughness: 0.24,
+        clearcoat: 1,
+      });
+      const armProfile = new THREE.CatmullRomCurve3([
+        [0, -1],
+        [0.12, -0.96],
+        [0.2, -0.84],
+        [0.23, -0.67],
+        [0.26, -0.42],
+        [0.36, -0.12],
+        [0.4, 0.08],
+        [0.3, 0.26],
+        [0, 0.32],
+      ].map(([radius, height]) => new THREE.Vector3(radius, height, 0)));
+      const armGeometry = new THREE.LatheGeometry(
+        armProfile.getPoints(40).map((point) => new THREE.Vector2(point.x, point.y)),
+        32
       );
-      shine.scale.set(1.2, 0.42, 0.14);
-      shine.position.set(-0.68, 2.45, 0.88);
-      shine.rotation.z = -0.45;
-      slime.add(shine);
+      const armVertices = armGeometry.attributes.position;
+      for (let i = 0; i < armVertices.count; i++) {
+        const height = armVertices.getY(i);
+        const curl = THREE.MathUtils.smoothstep(-height, 0, 1);
+        armVertices.setZ(i, armVertices.getZ(i) * 0.86 + curl * 0.18);
+      }
+      armGeometry.computeVertexNormals();
+      const arms = [-1, 1].map((side) => {
+        const pivot = new THREE.Group();
+        pivot.position.set(side * 1.22, 1.48, 0.1);
+        pivot.rotation.z = side * 0.55;
+        const arm = new THREE.Mesh(armGeometry, bodyMaterial);
+        arm.castShadow = true;
+        pivot.add(arm);
+        slime.add(pivot);
+        return pivot;
+      });
+      const throwingArm = arms[0];
+      const gooBlobs = [];
+      const releaseTime = 0.22;
+      const throwDuration = 0.55;
+      let throwElapsed = throwDuration;
+      const enemies = [];
+      const enemyRadius = 0.75;
+      const enemyBodyMaterial = new THREE.MeshStandardMaterial({ color: 0xe77f45, roughness: 0.48 });
+      const enemyEyeMaterial = new THREE.MeshStandardMaterial({ color: 0x3b2027 });
+      const enemySpawn = new THREE.Vector3();
 
-      const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25 });
-      const pupilMaterial = new THREE.MeshStandardMaterial({ color: 0x172719, roughness: 0.4 });
-      const eyeHighlightMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      const eyes = [];
-
-      for (const x of [-0.48, 0.48]) {
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.27, 24, 16), eyeMaterial);
-        eye.position.set(x, 1.75, 1.18);
-        eye.scale.y = 1.15;
-        eye.castShadow = true;
-        slime.add(eye);
-
-        const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.11, 20, 12), pupilMaterial);
-        pupil.position.set(x, 1.75, 1.41);
-        pupil.castShadow = true;
-        slime.add(pupil);
-
-        const highlight = new THREE.Mesh(
-          new THREE.SphereGeometry(0.026, 12, 8),
-          eyeHighlightMaterial
-        );
-        highlight.position.set(x - 0.035, 1.82, 1.505);
-        slime.add(highlight);
-        eyes.push(eye);
+      function spawnEnemy(x, z) {
+        const enemy = new THREE.Group();
+        enemy.position.set(x, groundHeight, z);
+        const body = new THREE.Mesh(gooGeometry, enemyBodyMaterial);
+        body.position.y = 0.67;
+        body.scale.set(enemyRadius, 0.68, 0.62);
+        body.castShadow = true;
+        enemy.add(body);
+        for (const x of [-0.24, 0.24]) {
+          const eye = new THREE.Mesh(gooGeometry, enemyEyeMaterial);
+          eye.position.set(x, 0.81, 0.56);
+          eye.scale.set(0.085, 0.12, 0.075);
+          enemy.add(eye);
+        }
+        scene.add(enemy);
+        enemies.push(enemy);
       }
 
-      const mouth = new THREE.Mesh(
-        new THREE.TorusGeometry(0.22, 0.055, 12, 24, Math.PI),
-        new THREE.MeshStandardMaterial({ color: 0x1f6033, roughness: 0.68 })
-      );
-      mouth.position.set(0, 1.22, 1.37);
-      mouth.rotation.z = Math.PI;
-      slime.add(mouth);
+      function spawnEnemyAhead() {
+        const lane = (enemies.length + 1) % 3 - 1;
+        enemySpawn.set(lane * 2.5, 0, 6).applyQuaternion(slime.quaternion).add(slime.position);
+        spawnEnemy(
+          THREE.MathUtils.clamp(enemySpawn.x, -48, 48),
+          THREE.MathUtils.clamp(enemySpawn.z, -48, 48)
+        );
+      }
+
+      spawnEnemy(-3, 5);
+
+      function updateEnemies(delta, elapsed) {
+        for (const enemy of enemies) {
+          const dx = slime.position.x - enemy.position.x;
+          const dz = slime.position.z - enemy.position.z;
+          const distance = Math.hypot(dx, dz);
+          if (distance < 12 && distance > 2.55) {
+            enemy.rotation.y = Math.atan2(dx, dz);
+            const step = Math.min(delta * 1.8, distance - 2.55);
+            enemy.position.x += dx / distance * step;
+            enemy.position.z += dz / distance * step;
+          }
+          enemy.position.y = groundHeight + Math.abs(Math.sin(elapsed * 5)) * 0.1;
+        }
+
+        const spacing = enemyRadius * 2;
+        for (let pass = 0; pass < 3; pass++) {
+          for (let i = 0; i < enemies.length; i++) {
+            const a = enemies[i].position;
+            for (let j = i + 1; j < enemies.length; j++) {
+              const b = enemies[j].position;
+              const dx = b.x - a.x;
+              const dz = b.z - a.z;
+              const distance = Math.hypot(dx, dz);
+              if (distance >= spacing) continue;
+
+              const correction = (spacing - distance) * 0.5;
+              const offsetX = (distance > 0 ? dx / distance : 1) * correction;
+              const offsetZ = distance > 0 ? dz / distance * correction : 0;
+              a.x -= offsetX;
+              a.z -= offsetZ;
+              b.x += offsetX;
+              b.z += offsetZ;
+            }
+          }
+        }
+      }
+
+      function updateGoo(delta, elapsed) {
+        const previousThrowTime = throwElapsed;
+        throwElapsed = Math.min(throwElapsed + delta, throwDuration);
+        const windup = THREE.MathUtils.smoothstep(throwElapsed, 0, 0.14);
+        const swing = THREE.MathUtils.smoothstep(throwElapsed, 0.14, releaseTime);
+        const recovery = THREE.MathUtils.smoothstep(throwElapsed, releaseTime, throwDuration);
+        arms[1].rotation.x = Math.sin(elapsed * 3) * 0.1;
+        throwingArm.rotation.x = (windup * 0.7 - swing * 2.1) * (1 - recovery);
+
+        if (previousThrowTime < releaseTime && throwElapsed >= releaseTime) {
+          const blob = new THREE.Mesh(gooGeometry, gooMaterial);
+          blob.scale.setScalar(0.22);
+          blob.castShadow = true;
+          slime.localToWorld(blob.position.set(0, 1.45, 1.8));
+          const velocity = new THREE.Vector3(0, 0.4, 9).applyQuaternion(slime.quaternion);
+          scene.add(blob);
+          gooBlobs.push({ blob, velocity, splatTime: 0 });
+        }
+
+        for (let i = gooBlobs.length - 1; i >= 0; i--) {
+          const goo = gooBlobs[i];
+          if (goo.splatTime > 0) {
+            goo.splatTime -= delta;
+            if (goo.splatTime <= 0) {
+              scene.remove(goo.blob);
+              gooBlobs.splice(i, 1);
+            }
+          } else {
+            goo.velocity.y -= 11 * delta;
+            goo.blob.position.addScaledVector(goo.velocity, delta);
+            const hitIndex = enemies.findIndex((enemy) => Math.hypot(
+              goo.blob.position.x - enemy.position.x,
+              goo.blob.position.y - enemy.position.y - 0.67,
+              goo.blob.position.z - enemy.position.z
+            ) < 0.95);
+            if (hitIndex !== -1) {
+              scene.remove(enemies[hitIndex], goo.blob);
+              enemies.splice(hitIndex, 1);
+              gooBlobs.splice(i, 1);
+              continue;
+            }
+            if (goo.blob.position.y <= groundHeight + 0.22) {
+              goo.blob.position.y = groundHeight + 0.035;
+              goo.blob.scale.set(0.41, 0.045, 0.34);
+              goo.splatTime = 0.45;
+            }
+          }
+        }
+      }
+
+      const bodyBasePositions = Float32Array.from(bodyGeometry.attributes.position.array);
+
+      const face = new THREE.Group();
+      slime.add(face);
+      const eyes = [];
+      const eyeHeight = 0.21;
+
+      for (const side of [-1, 1]) {
+        const eye = new THREE.Mesh(gooGeometry, enemyEyeMaterial);
+        eye.position.set(side * 0.44, 1.73, 1.42);
+        eye.rotation.y = side * 0.25;
+        eye.scale.set(0.15, eyeHeight, 0.11);
+        eyes.push(eye);
+        face.add(eye);
+      }
 
       const shadowCanvas = document.createElement("canvas");
       shadowCanvas.width = 128;
@@ -192,9 +507,9 @@
         })
       );
       shadow.rotation.x = -Math.PI / 2;
-      shadow.position.y = 0.01;
-      shadow.scale.y = 0.38;
-      scene.add(shadow);
+      shadow.position.y = groundHeight + 0.001;
+      shadow.scale.set(1.5, 1.5, 1);
+      slime.add(shadow);
 
       addEventListener("resize", () => {
         camera.aspect = innerWidth / innerHeight;
@@ -208,53 +523,78 @@
         const delta = Math.min(clock.getDelta(), 0.05);
         const elapsed = clock.elapsedTime;
 
+        if (cameraMode === 1 && controls.isLocked) {
+          camera.getWorldDirection(lookDirection);
+          if (Math.hypot(lookDirection.x, lookDirection.z) > 1e-5) {
+            slime.rotation.y = Math.atan2(lookDirection.x, lookDirection.z);
+          }
+        }
+        localVelocity.copy(slimeVelocity).applyAxisAngle(worldUp, -slime.rotation.y);
+
+        face.visible = cameraMode !== 1;
+        face.position.copy(localVelocity).multiplyScalar(0.016);
+
         const position = bodyGeometry.attributes.position;
         for (let i = 0; i < position.count; i++) {
           const baseX = bodyBasePositions[i * 3];
           const baseY = bodyBasePositions[i * 3 + 1];
           const baseZ = bodyBasePositions[i * 3 + 2];
           const angle = Math.atan2(baseZ, baseX);
-          const footWeight = 1 - THREE.MathUtils.smoothstep(baseY, 0.2, 0.9);
-          const bodyWeight = Math.sin(THREE.MathUtils.clamp(baseY / 3.08, 0, 1) * Math.PI);
+          const footWeight = THREE.MathUtils.smoothstep(baseY, groundHeight, 0.12)
+            * (1 - THREE.MathUtils.smoothstep(baseY, 0.2, 0.9));
+          const bodyWeight = Math.sin(THREE.MathUtils.clamp(baseY / bodyHeight, 0, 1) * Math.PI);
           const footRipple = Math.sin(angle * 3 + elapsed * 1.4) * 0.025
             + Math.sin(angle * 5 - elapsed * 0.8) * 0.012;
           const bodyRipple = Math.sin(angle * 2 + elapsed * 1.3 + baseY * 1.8) * 0.012;
           const radialChange = footRipple * footWeight + bodyRipple * bodyWeight;
-          const edgeLift = Math.max(0, baseY) * footWeight * Math.sin(angle * 3 + elapsed * 1.4) * 0.012;
+          const lean = bodyWeight * THREE.MathUtils.smoothstep(baseY, 0.1, 1.5) * 0.018;
           position.setXYZ(
             i,
-            baseX * (1 + radialChange),
-            baseY + edgeLift + bodyRipple * bodyWeight * 0.25,
-            baseZ * (1 + radialChange)
+            baseX * (1 + radialChange) + localVelocity.x * lean,
+            baseY + bodyRipple * bodyWeight * 0.25,
+            baseZ * (1 + radialChange) + localVelocity.z * lean
           );
         }
         position.needsUpdate = true;
         bodyGeometry.computeVertexNormals();
 
         const blinkCycle = elapsed % 4.5;
-        const blinking = blinkCycle > 4.15 && blinkCycle < 4.35;
+        const blinking = cameraMode !== 1 && blinkCycle > 4.15 && blinkCycle < 4.35;
         const blinkScale = blinking ? 0.12 : 1;
         for (const eye of eyes) {
-          eye.scale.y = THREE.MathUtils.lerp(eye.scale.y, 1.15 * blinkScale, 0.5);
+          eye.scale.y = THREE.MathUtils.lerp(eye.scale.y, eyeHeight * blinkScale, 0.5);
         }
 
-        if (controls.isLocked) {
-          const forward = Number(pressedKeys.has("KeyW") || pressedKeys.has("ArrowUp"))
-            - Number(pressedKeys.has("KeyS") || pressedKeys.has("ArrowDown"));
-          const sideways = Number(pressedKeys.has("KeyD") || pressedKeys.has("ArrowRight"))
-            - Number(pressedKeys.has("KeyA") || pressedKeys.has("ArrowLeft"));
-          const length = Math.hypot(forward, sideways) || 1;
-          controls.moveForward((forward / length) * 3 * delta);
-          controls.moveRight((sideways / length) * 3 * delta);
-          camera.position.y = 1.65;
+        const isPressed = (...keys) => keys.some((key) => pressedKeys.has(key));
+        const forward = Number(isPressed("KeyZ", "KeyW", "ArrowUp"))
+          - Number(isPressed("KeyS", "ArrowDown"));
+        const sideways = Number(isPressed("KeyD", "ArrowRight"))
+          - Number(isPressed("KeyQ", "KeyA", "ArrowLeft"));
+        const length = Math.hypot(forward, sideways) || 1;
 
-          const distance = Math.hypot(camera.position.x, camera.position.z);
-          if (distance > 4.8) {
-            camera.position.x *= 4.8 / distance;
-            camera.position.z *= 4.8 / distance;
+        if (cameraMode === 4) {
+          slimeVelocity.set(0, 0, 0);
+          const forwardDirection = controls.getDirection(new THREE.Vector3());
+          forwardDirection.y = 0;
+          forwardDirection.normalize();
+          const rightDirection = new THREE.Vector3().crossVectors(forwardDirection, camera.up).normalize();
+          camera.position.addScaledVector(forwardDirection, (forward / length) * 4 * delta);
+          camera.position.addScaledVector(rightDirection, (sideways / length) * 4 * delta);
+        } else {
+          moveSlime(forward, sideways, delta);
+          if (cameraMode === 1) {
+            camera.position.copy(slime.localToWorld(cameraTarget.copy(slimeEye)));
+          } else if (cameraMode === 2) {
+            camera.position.set(slime.position.x, slime.position.y + 2, slime.position.z + 7.6);
+            camera.lookAt(slime.localToWorld(cameraTarget.set(0, 1.45, 0)));
+          } else {
+            camera.position.copy(slime.position).add(thirdPersonOffset);
+            camera.lookAt(slime.localToWorld(cameraTarget.set(0, 0.8, 0)));
           }
         }
 
+        updateEnemies(delta, elapsed);
+        updateGoo(delta, elapsed);
         renderer.render(scene, camera);
         requestAnimationFrame(animate);
       }
